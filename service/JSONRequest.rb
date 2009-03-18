@@ -1,5 +1,5 @@
 # Copyright 2006-2009, Yahoo!
-#  
+#
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
 #  met:
@@ -13,7 +13,7 @@
 #  3. Neither the name of Yahoo! nor the names of its
 #     contributors may be used to endorse or promote products derived
 #     from this software without specific prior written permission.
-# 
+#
 #  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 #  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 #  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -68,40 +68,88 @@ class JSONRequestInstance
         send = nil
         send = JSON.generate(s) if s != nil
 
-        site = Net::HTTP.new(u.host, u.port) 
-        site.open_timeout = t 
-        site.read_timeout = t 
-        headers = {
-          'Content-Type'     => 'application/jsonrequest',
-          'Accept'           => 'application/jsonrequest',
-          'Content-Encoding' => 'identity',
-          'User-Agent'       => 'Yahoo! BrowserPlus'
-        }
-        path = (u.path == nil || u.path.empty?) ? "/" : u.path
-        path += ("?" + u.query) if u.query
-        if send
-          req = Net::HTTP::Post.new(path, headers)
-        else
-          req = Net::HTTP::Get.new(path, headers)
+        @proxy_server = @proxy_port = nil
+        case RUBY_PLATFORM.split('-').last
+          when 'mswin32', 'cygwin':
+            begin
+              bp_require 'win32/registry'
+              Win32::Registry::HKEY_CURRENT_USER.open('Software\Microsoft\Windows\CurrentVersion\Internet Settings') do |node|
+                begin
+                  # Split and sort by type so that HTTP(S) comes before SOCKS.
+                  proxies = node.read('ProxyServer')[1].split(';').sort
+                  proxies.each do |candidate|
+                    if candidate =~ /=/ then
+                      proxy_type, proxy = candidate.split('=')
+                    else
+                      proxy_type = nil
+                      proxy = candidate
+                    end
+                    @proxy_server, @proxy_port = proxy.split(':')
+                    # Use the HTTP(S) proxy over SOCKS proxy if both are specified.
+                    case proxy_type
+                      when nil:
+                        begin
+                          # puts "Same proxy for HTTP, HTTPS & FTP"
+                          @proxy = Net::HTTP::Proxy(@proxy_server, @proxy_port)
+                          break
+                        end
+                      when 'http', 'https'
+                        if proxy_type == u.scheme then
+                          # puts "proxy for #{proxy_type.upcase}"
+                          @proxy = Net::HTTP::Proxy(@proxy_server, @proxy_port)
+                          break
+                        end
+                      when 'socks':
+                        begin
+                          # puts "SOCKSIFY"
+                          bp_require 'socksify/socksify'
+                          TCPSocket::socks_server = @proxy_server
+                          TCPSocket::socks_port = @proxy_port
+                          @proxy = Net::HTTP::Proxy(nil)
+                          break
+                        end
+                    end
+                  end
+                end if node.read('ProxyEnable')[1] == 1
+              end
+            end
         end
 
-        res = site.request(req, send)
-        
-        if res.code != "200"
-          bp_log('warn', "res.code => #{res.code}")
-          b.error("JSONRequestError", "not ok")
-          return
-        end
+        @proxy.start(u.host, u.port) do |http|
+          http.open_timeout = t
+          http.read_timeout = t
+          headers = {
+            'Content-Type'     => 'application/jsonrequest',
+            'Accept'           => 'application/jsonrequest',
+            'Content-Encoding' => 'identity',
+            'User-Agent'       => 'Yahoo! BrowserPlus'
+          }
+          path = (u.path == nil || u.path.empty?) ? "/" : u.path
+          path += ("?" + u.query) if u.query
+          if send
+            req = Net::HTTP::Post.new(path, headers)
+          else
+            req = Net::HTTP::Get.new(path, headers)
+          end
 
-        obj = JSON.parse(res.body)
-        bp.complete(obj);
+          res = http.request(req, send)
+
+          if res.code != "200"
+            bp_log('warn', "res.code => #{res.code}")
+            b.error("JSONRequestError", "not ok")
+            return
+          end
+
+          obj = JSON.parse(res.body)
+          bp.complete(obj);
+        end
       rescue Timeout::Error, EOFError
         bp.error("JSONRequestError", "no response")
-      rescue JSON::ParserError      
+      rescue JSON::ParserError
         bp.error("JSONRequestError", "bad response")
-      rescue URI::InvalidURIError, Errno::ECONNREFUSED  => e       
-        bp.error("JSONRequestError", "bad URL")        
-      rescue Exception => e       
+      rescue URI::InvalidURIError, Errno::ECONNREFUSED  => e
+        bp.error("JSONRequestError", "bad URL")
+      rescue Exception => e
         # uh oh, log and return bad url.
         bp_log('warn', "Unexpected exception (#{e.class}) for '#{ui}': #{e.to_s}")
         bp.error("JSONRequestError", "bad URL")
@@ -126,55 +174,54 @@ rubyCoreletDefinition = {
   'class' => "JSONRequestInstance",
   'name' => "JSONRequest",
   'major_version' => 1,
-  'minor_version' => 0,  
-  'micro_version' => 10,  
+  'minor_version' => 1,
+  'micro_version' => 0,
   'documentation' => 'Allows secure cross-domain JSON requests, inspired by http://www.json.org/JSONRequest.html.',
   'functions' =>
   [
-    {
-      'name' => 'post',
-      'documentation' => "Perform a JSON POST request.",
-      'arguments' =>
-      [
-        {
-          'name' => 'url',
-          'type' => 'string',
-          'documentation' => 'The URL to fetch.',
-          'required' => true
-        },
-        {
-          'name' => 'send',
-          'type' => 'any',
-          'documentation' => 'The JSON object to send.',
-          'required' => true
-        },
-        {
-          'name' => 'timeout',
-          'type' => 'integer',
-          'documentation' => 'The number of milliseconds to wait for the response. This parameter is optional. The default is 10000 (10 seconds).',
-          'required' => false
-        }
-      ]
-    },
-    {
-      'name' => 'get',
-      'documentation' => "Perform a JSON GET request.",
-      'arguments' =>
-      [
-        {
-          'name' => 'url',
-          'type' => 'string',
-          'documentation' => 'The URL to fetch.',
-          'required' => true
-        },
-        {
-          'name' => 'timeout',
-          'type' => 'integer',
-          'documentation' => 'The number of milliseconds to wait for the response. This parameter is optional. The default is 10000 (10 seconds).',
-          'required' => false
-        }
-      ]
-    }
+   {
+     'name' => 'post',
+     'documentation' => "Perform a JSON POST request.",
+     'arguments' =>
+     [
+      {
+        'name' => 'url',
+        'type' => 'string',
+        'documentation' => 'The URL to fetch.',
+        'required' => true
+      },
+      {
+        'name' => 'send',
+        'type' => 'any',
+        'documentation' => 'The JSON object to send.',
+        'required' => true
+      },
+      {
+        'name' => 'timeout',
+        'type' => 'integer',
+        'documentation' => 'The number of milliseconds to wait for the response. This parameter is optional. The default is 10000 (10 seconds).',
+        'required' => false
+      }
+     ]
+   },
+   {
+     'name' => 'get',
+     'documentation' => "Perform a JSON GET request.",
+     'arguments' =>
+     [
+      {
+        'name' => 'url',
+        'type' => 'string',
+        'documentation' => 'The URL to fetch.',
+        'required' => true
+      },
+      {
+        'name' => 'timeout',
+        'type' => 'integer',
+        'documentation' => 'The number of milliseconds to wait for the response. This parameter is optional. The default is 10000 (10 seconds).',
+        'required' => false
+      }
+     ]
+   }
   ]
 }
-
