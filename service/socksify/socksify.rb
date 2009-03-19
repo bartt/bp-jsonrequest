@@ -16,7 +16,7 @@
 =end
 
 require 'socket'
-require 'socksify_debug'
+# require 'socksify_debug'
 
 class SOCKSError < RuntimeError
   def initialize(msg)
@@ -125,7 +125,7 @@ class TCPSocket
       Socksify::debug_debug "Connected to #{host}:#{port}"
     end
   end
-  
+
   # Authentication
   def socks_authenticate
     Socksify::debug_debug "Sending no authentication"
@@ -226,7 +226,7 @@ module Socksify
         s.write "\xF0\000\003" + [host.size].pack('C') + host
       end
       s.write [0].pack('n')  # Port
-      
+
       addr, port = s.socks_receive_reply
       Socksify::debug_notice "Resolved #{host} as #{addr} over SOCKS"
       addr

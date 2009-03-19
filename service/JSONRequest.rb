@@ -102,6 +102,7 @@ class JSONRequestInstance
                       when 'socks':
                         begin
                           # puts "SOCKSIFY"
+                          bp_require 'socksify/socksify_debug'
                           bp_require 'socksify/socksify'
                           TCPSocket::socks_server = @proxy_server
                           TCPSocket::socks_port = @proxy_port
