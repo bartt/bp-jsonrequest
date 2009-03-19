@@ -89,19 +89,19 @@ class JSONRequestInstance
                     case proxy_type
                       when nil:
                         begin
-                          # puts "Same proxy for HTTP, HTTPS & FTP"
+                          bp_log('info', "Same proxy for HTTP, HTTPS & FTP - #{@proxy_server}:#{@proxy_port}")
                           @proxy = Net::HTTP::Proxy(@proxy_server, @proxy_port)
                           break
                         end
                       when 'http', 'https'
                         if proxy_type == u.scheme then
-                          # puts "proxy for #{proxy_type.upcase}"
+                          bp_log('info', "#{proxy_type.upcase} proxy - #{@proxy_server}:#{@proxy_port}")
                           @proxy = Net::HTTP::Proxy(@proxy_server, @proxy_port)
                           break
                         end
                       when 'socks':
                         begin
-                          # puts "SOCKSIFY"
+                          bp_log('info', "SOCKS proxy - #{@proxy_server}:#{@proxy_port}")
                           bp_require 'socksify/socksify_debug'
                           bp_require 'socksify/socksify'
                           TCPSocket::socks_server = @proxy_server
@@ -176,7 +176,7 @@ rubyCoreletDefinition = {
   'name' => "JSONRequest",
   'major_version' => 1,
   'minor_version' => 1,
-  'micro_version' => 0,
+  'micro_version' => 1,
   'documentation' => 'Allows secure cross-domain JSON requests, inspired by http://www.json.org/JSONRequest.html.',
   'functions' =>
   [
